@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="vi" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Công cụ thuyết trình</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.css">
+<style>
+  html,body{height:100%;margin:0;overflow:hidden;background:#000}
+  #view{position:fixed;inset:0;background:#0b0d10}
+  #view .pano{position:absolute;inset:0;width:100%;height:100%}
+  #view iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#111}
+  .imgview{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none}
+  .imgview:active{cursor:grabbing}
+  .imgview img{position:absolute;left:50%;top:50%;transform-origin:center center;max-width:none;pointer-events:none}
+  .emptymsg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9aa4b2;gap:.75rem;text-align:center;padding:1rem}
+
+  .topbar{position:fixed;top:12px;right:12px;z-index:40;display:flex;gap:6px}
+  .titlebadge{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:35;max-width:50vw;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(6px);color:#fff;padding:.3rem .9rem;border-radius:2rem;
+    font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+  .zoomctl{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:35}
+
+  /* Menu: cả cụm [nút trái][danh sách][nút phải] được căn giữa màn hình.
+     Khi ít mục, danh sách co vừa nội dung nên 2 nút nằm sát 2 đầu menu.
+     Khi tràn, danh sách chiếm hết phần còn lại nên 2 nút bị đẩy ra sát 2 mép màn hình. */
+  #menu{position:fixed;left:0;right:0;bottom:0;z-index:38;padding:28px 8px 12px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    background:linear-gradient(to top,rgba(0,0,0,.82),rgba(0,0,0,0));transition:transform .3s ease}
+  #menu.hidden{transform:translateY(110%)}
+  #menu .track{flex:0 1 auto;min-width:0;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;padding:4px 2px}
+  #menu .track::-webkit-scrollbar{display:none}
+  #menu .track{cursor:grab;touch-action:pan-x;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;user-select:none}
+  #menu .track.dragging{cursor:grabbing;scroll-snap-type:none}
+  #menu .nav{flex:0 0 auto}
+  .mi{flex:0 0 160px;scroll-snap-align:center;border:2px solid transparent;border-radius:.6rem;overflow:hidden;
+    background:#1b1f24;color:#fff;padding:0;position:relative;cursor:pointer;text-align:left;transition:transform .15s,border-color .15s}
+  .mi:hover{transform:translateY(-3px)}
+  .mi.active{border-color:var(--bs-primary);box-shadow:0 0 0 2px rgba(13,110,253,.35)}
+  .mi .th{height:90px;background:#252a31 center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#7d8896}
+  .mi .lb{padding:5px 8px;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mi .tp{position:absolute;top:5px;left:5px;font-size:.7rem}
+
+  .list-group-item.sel{border-color:var(--bs-primary);background:rgba(13,110,253,.15)}
+  .list-group-item{cursor:pointer}
+  #editor{--bs-offcanvas-width:480px}
+</style>
+</head>
+<body>
+
+<div id="view"></div>
+<div class="titlebadge" id="badge"></div>
+
+<div class="topbar">
+  <button class="btn btn-dark btn-sm" id="btnMenu" title="Ẩn/hiện menu (M)"><i class="bi bi-layout-three-columns"></i></button>
+  <button class="btn btn-dark btn-sm" id="btnFs" title="Toàn màn hình (F)"><i class="bi bi-arrows-fullscreen"></i></button>
+  <button class="btn btn-primary btn-sm" id="btnEdit" title="Biên tập (E)"><i class="bi bi-pencil-square"></i></button>
+</div>
+
+<div class="zoomctl btn-group-vertical d-none" id="zoomctl">
+  <button class="btn btn-dark" id="zin" title="Phóng to"><i class="bi bi-plus-lg"></i></button>
+  <button class="btn btn-dark" id="zout" title="Thu nhỏ"><i class="bi bi-dash-lg"></i></button>
+  <button class="btn btn-dark" id="zreset" title="Đặt lại"><i class="bi bi-arrows-angle-contract"></i></button>
+</div>
+
+<div id="menu">
+  <button class="btn btn-dark btn-sm nav l" id="mPrev"><i class="bi bi-chevron-left"></i></button>
+  <div class="track" id="track"></div>
+  <button class="btn btn-dark btn-sm nav r" id="mNext"><i class="bi bi-chevron-right"></i></button>
+</div>
+
+<!-- Trình biên tập -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="editor" data-bs-backdrop="false" data-bs-scroll="true">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title"><i class="bi bi-sliders me-2"></i>Quản lý nội dung</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="mb-3">
+      <label class="form-label small text-secondary">Tên bài thuyết trình</label>
+      <input id="presTitle" class="form-control form-control-sm">
+    </div>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button class="btn btn-sm btn-success" id="btnAdd"><i class="bi bi-plus-lg"></i> Thêm mục</button>
+      <button class="btn btn-sm btn-outline-light" id="btnSave"><i class="bi bi-download"></i> Lưu JSON</button>
+      <label class="btn btn-sm btn-outline-light mb-0"><i class="bi bi-upload"></i> Nạp JSON
+        <input type="file" id="fileJson" accept=".json,application/json" hidden></label>
+      <button class="btn btn-sm btn-outline-danger ms-auto" id="btnReset" title="Quay về dữ liệu mẫu"><i class="bi bi-arrow-counterclockwise"></i></button>
+    </div>
+    <ul class="list-group mb-3" id="list"></ul>
+    <hr>
+    <div id="form"></div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3" style="z-index:2000;margin-bottom:120px">
+  <div id="toast" class="toast align-items-center text-bg-dark border" role="alert">
+    <div class="d-flex"><div class="toast-body" id="toastBody"></div>
+    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const STORE = 'presentation-tool-data-v1';
+const TYPES = {
+  pano:  {label:'Ảnh 360°', icon:'bi-globe2'},
+  image: {label:'Ảnh 2D',   icon:'bi-image'},
+  html:  {label:'HTML',     icon:'bi-code-slash'}
+};
+const BOOTSTRAP_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css';
+const BOOTSTRAP_ICONS = 'https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css';
+const BOOTSTRAP_JS = 'https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js';
+
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now() + Math.random().toString(16).slice(2));
+
+const DEFAULT = {
+  version: 1,
+  title: 'Bài thuyết trình mẫu',
+  items: [
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Toàn cảnh 360° (mẫu)', type:'pano',
+     src:'https://pannellum.org/images/alma.jpg', thumb:'', html:''},
+    {id:uid(), title:'Ảnh 2D - Núi', type:'image',
+     src:'https://picsum.photos/id/1018/2400/1500', thumb:'', html:''},
+    {id:uid(), title:'Ảnh 2D - Biển', type:'image',
+     src:'https://picsum.photos/id/1015/2400/1500', thumb:'', html:''},
+    {id:uid(), title:'Khối HTML (mẫu)', type:'html', src:'', thumb:'',
+     html:'<div class="container text-center py-5">\n  <h1 class="display-4">Xin chào!</h1>\n  <p class="lead">Đây là một khối HTML dùng Bootstrap 5.</p>\n  <div class="row g-3 mt-4">\n    <div class="col-md-4"><div class="card p-4"><h3>120</h3><p class="mb-0">Khách hàng</p></div></div>\n    <div class="col-md-4"><div class="card p-4"><h3>35</h3><p class="mb-0">Dự án</p></div></div>\n    <div class="col-md-4"><div class="card p-4"><h3>8</h3><p class="mb-0">Năm kinh nghiệm</p></div></div>\n  </div>\n</div>'}
+  ]
+};
+
+let data = loadStore();
+let currentId = null;
+let selId = null;
+let pano = null;
+let imgCtl = null;
+
+function loadStore(){
+  try{
+    const raw = localStorage.getItem(STORE);
+    if(raw){ const d = normalize(JSON.parse(raw)); if(d) return d; }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){
+  try{ localStorage.setItem(STORE, JSON.stringify(data)); }
+  catch(e){ toast('Dữ liệu quá lớn để tự lưu trong trình duyệt. Hãy dùng nút "Lưu JSON".'); }
+}
+function normalize(d){
+  if(!d || !Array.isArray(d.items)) return null;
+  return {
+    version:1,
+    title: String(d.title || 'Bài thuyết trình'),
+    items: d.items.map(it => ({
+      id: it.id || uid(),
+      title: String(it.title || 'Không tên'),
+      type: TYPES[it.type] ? it.type : 'image',
+      src: String(it.src || ''),
+      thumb: String(it.thumb || ''),
+      html: String(it.html || '')
+    }))
+  };
+}
+function toast(msg){
+  $('#toastBody').textContent = msg;
+  bootstrap.Toast.getOrCreateInstance($('#toast'), {delay:4500}).show();
+}
+const idx = id => data.items.findIndex(i => i.id === id);
+
+/* ===================== MENU CAROUSEL ===================== */
+function renderMenu(){
+  const track = $('#track');
+  track.innerHTML = '';
+  data.items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.className = 'mi' + (it.id === currentId ? ' active' : '');
+    b.dataset.id = it.id;
+    const th = document.createElement('div');
+    th.className = 'th';
+    const t = it.thumb || (it.type !== 'html' ? it.src : '');
+    if(t){ th.style.backgroundImage = 'url("' + t.replace(/"/g,'%22') + '")'; }
+    else { th.innerHTML = '<i class="bi ' + TYPES[it.type].icon + '"></i>'; }
+    const tp = document.createElement('span');
+    tp.className = 'badge text-bg-dark tp';
+    tp.innerHTML = '<i class="bi ' + TYPES[it.type].icon + '"></i> ' + TYPES[it.type].label;
+    const lb = document.createElement('div');
+    lb.className = 'lb';
+    lb.textContent = (i+1) + '. ' + it.title;
+    b.append(th, tp, lb);
+    b.onclick = () => show(it.id);
+    track.append(b);
+  });
+  $('#mPrev').style.display = $('#mNext').style.display = data.items.length ? '' : 'none';
+}
+function scrollMenuTo(id){
+  const el = $('#track').querySelector('[data-id="'+id+'"]');
+  if(el) el.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+}
+$('#mPrev').onclick = () => $('#track').scrollBy({left:-340, behavior:'smooth'});
+$('#mNext').onclick = () => $('#track').scrollBy({left: 340, behavior:'smooth'});
+
+/* Vuốt/kéo carousel: cảm ứng đã cuộn ngang native; ở đây bổ sung kéo bằng chuột/bút và lăn chuột */
+(function(){
+  const tr = $('#track');
+  let down = false, moved = false, sx = 0, sl = 0, pid = null;
+  tr.addEventListener('pointerdown', e => {
+    if(e.pointerType === 'touch' || e.button !== 0) return;
+    down = true; moved = false; sx = e.clientX; sl = tr.scrollLeft; pid = e.pointerId;
+  });
+  tr.addEventListener('pointermove', e => {
+    if(!down || e.pointerId !== pid) return;
+    const dx = e.clientX - sx;
+    if(!moved && Math.abs(dx) > 5){
+      moved = true; tr.classList.add('dragging');
+      try{ tr.setPointerCapture(pid); }catch(_){}
+    }
+    if(moved) tr.scrollLeft = sl - dx;
+  });
+  const end = e => {
+    if(!down || e.pointerId !== pid) return;
+    down = false; tr.classList.remove('dragging');
+    try{ tr.releasePointerCapture(pid); }catch(_){}
+    if(moved) setTimeout(() => { moved = false; }, 0);
+  };
+  tr.addEventListener('pointerup', end);
+  tr.addEventListener('pointercancel', end);
+  // Chặn click vào mục nếu vừa kéo
+  tr.addEventListener('click', e => { if(moved){ e.stopPropagation(); e.preventDefault(); } }, true);
+  // Lăn chuột dọc -> cuộn ngang
+  tr.addEventListener('wheel', e => {
+    if(Math.abs(e.deltaY) > Math.abs(e.deltaX) && tr.scrollWidth > tr.clientWidth){
+      e.preventDefault(); tr.scrollLeft += e.deltaY;
+    }
+  }, {passive:false});
+})();
+
+/* ===================== HIỂN THỊ NỘI DUNG ===================== */
+function clearView(){
+  if(pano){ try{ pano.destroy(); }catch(e){} pano = null; }
+  imgCtl = null;
+  $('#view').innerHTML = '';
+  $('#zoomctl').classList.add('d-none');
+}
+function emptyMsg(parent, html){
+  const d = document.createElement('div');
+  d.className = 'emptymsg';
+  d.innerHTML = html;
+  parent.append(d);
+  return d;
+}
+function show(id){
+  const i = idx(id);
+  clearView();
+  const view = $('#view');
+  if(i < 0){
+    currentId = null;
+    $('#badge').style.display = 'none';
+    const d = emptyMsg(view, '<i class="bi bi-collection-play display-1"></i><div class="h5 mb-0">Chưa có nội dung</div><button class="btn btn-primary">Mở trình biên tập</button>');
+    d.querySelector('button').onclick = openEditor;
+    renderMenu();
+    return;
+  }
+  const it = data.items[i];
+  currentId = it.id;
+  $('#badge').style.display = '';
+  $('#badge').textContent = (i+1) + '/' + data.items.length + ' · ' + it.title;
+
+  if(it.type === 'pano') mountPano(view, it);
+  else if(it.type === 'image') mountImage(view, it);
+  else mountHtml(view, it);
+
+  renderMenu();
+  scrollMenuTo(it.id);
+}
+function step(d){
+  if(!data.items.length) return;
+  let i = idx(currentId);
+  i = i < 0 ? 0 : (i + d + data.items.length) % data.items.length;
+  show(data.items[i].id);
+}
+
+/* ---- 360° bằng Pannellum ---- */
+function mountPano(view, it){
+  if(!it.src){ emptyMsg(view, '<i class="bi bi-globe2 display-1"></i><div>Mục này chưa có ảnh 360°.</div>'); return; }
+  const box = document.createElement('div');
+  box.className = 'pano';
+  view.append(box);
+  try{
+    pano = pannellum.viewer(box, {
+      type:'equirectangular', panorama: it.src, autoLoad:true,
+      showFullscreenCtrl:false, compass:false, hfov:100, mouseZoom:true
+    });
+  }catch(e){ emptyMsg(view, 'Không tải được ảnh 360°.'); }
+}
+
+/* ---- Ảnh 2D có zoom/pan trong khung ---- */
+function mountImage(view, it){
+  if(!it.src){ emptyMsg(view, '<i class="bi bi-image display-1"></i><div>Mục này chưa có ảnh.</div>'); return; }
+  const wrap = document.createElement('div');
+  wrap.className = 'imgview';
+  view.append(wrap);
+  const img = new Image();
+  img.draggable = false; img.alt = it.title;
+  wrap.append(img);
+
+  let s = 1, tx = 0, ty = 0, fw = 0, fh = 0;
+  const W = () => wrap.clientWidth, H = () => wrap.clientHeight;
+  const MAX = 8;
+
+  function apply(){
+    const mx = Math.max(0, (fw*s - W())/2), my = Math.max(0, (fh*s - H())/2);
+    tx = Math.min(mx, Math.max(-mx, tx));
+    ty = Math.min(my, Math.max(-my, ty));
+    img.style.transform = 'translate(-50%,-50%) translate('+tx+'px,'+ty+'px) scale('+s+')';
+  }
+  function fit(){
+    if(!img.naturalWidth) return;
+    const k = Math.min(W()/img.naturalWidth, H()/img.naturalHeight);
+    fw = img.naturalWidth*k; fh = img.naturalHeight*k;
+    img.style.width = fw+'px'; img.style.height = fh+'px';
+    apply();
+  }
+  function zoomAt(ns, cx, cy){
+    ns = Math.min(MAX, Math.max(1, ns));
+    const r = wrap.getBoundingClientRect();
+    const px = cx - r.left - W()/2, py = cy - r.top - H()/2;
+    tx = px - (px - tx) * (ns/s);
+    ty = py - (py - ty) * (ns/s);
+    s = ns; apply();
+  }
+  function centerPt(){ const r = wrap.getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; }
+
+  img.onload = fit;
+  img.onerror = () => { wrap.innerHTML = ''; emptyMsg(wrap, '<i class="bi bi-exclamation-triangle display-1"></i><div>Không tải được ảnh.</div>'); };
+  img.src = it.src;
+
+  wrap.addEventListener('wheel', e => { e.preventDefault(); zoomAt(s*Math.exp(-e.deltaY*0.0018), e.clientX, e.clientY); }, {passive:false});
+  wrap.addEventListener('dblclick', e => { zoomAt(s > 1.05 ? 1 : 3, e.clientX, e.clientY); });
+
+  const ptrs = new Map(); let lastDist = 0;
+  const dist = () => { const p = [...ptrs.values()]; return Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y) || 1; };
+  wrap.addEventListener('pointerdown', e => {
+    wrap.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(ptrs.size === 2) lastDist = dist();
+  });
+  wrap.addEventListener('pointermove', e => {
+    const p = ptrs.get(e.pointerId); if(!p) return;
+    if(ptrs.size === 1){ tx += e.clientX - p.x; ty += e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; apply(); }
+    else if(ptrs.size === 2){
+      p.x = e.clientX; p.y = e.clientY;
+      const q = [...ptrs.values()], d = dist();
+      zoomAt(s*d/lastDist, (q[0].x+q[1].x)/2, (q[0].y+q[1].y)/2);
+      lastDist = d;
+    }
+  });
+  const up = e => { ptrs.delete(e.pointerId); if(ptrs.size === 2) lastDist = dist(); };
+  wrap.addEventListener('pointerup', up);
+  wrap.addEventListener('pointercancel', up);
+
+  imgCtl = {
+    zoomBy: f => { const c = centerPt(); zoomAt(s*f, c.x, c.y); },
+    reset: () => { s = 1; tx = ty = 0; apply(); },
+    resize: fit
+  };
+  $('#zoomctl').classList.remove('d-none');
+}
+$('#zin').onclick  = () => imgCtl && imgCtl.zoomBy(1.4);
+$('#zout').onclick = () => imgCtl && imgCtl.zoomBy(1/1.4);
+$('#zreset').onclick = () => imgCtl && imgCtl.reset();
+window.addEventListener('resize', () => imgCtl && imgCtl.resize());
+
+/* ---- Khối HTML (iframe sandbox) ---- */
+function mountHtml(view, it){
+  const f = document.createElement('iframe');
+  f.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms');
+  const body = it.html || '<div class="container py-5 text-secondary">Khối HTML trống.</div>';
+  f.srcdoc = /<html[\s>]/i.test(body) ? body :
+    '<!doctype html><html lang="vi" data-bs-theme="dark"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<link rel="stylesheet" href="' + BOOTSTRAP_CSS + '">' +
+    '<link rel="stylesheet" href="' + BOOTSTRAP_ICONS + '">' +
+    '<style>body{padding:2rem 2rem 9rem;min-height:100vh}</style></head><body>' + body +
+    '<script src="' + BOOTSTRAP_JS + '"><\/script></body></html>';
+  view.append(f);
+}
+
+/* ===================== TOÀN MÀN HÌNH / PHÍM TẮT ===================== */
+function toggleFs(){
+  if(document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(()=>{});
+}
+document.addEventListener('fullscreenchange', () => {
+  $('#btnFs').innerHTML = '<i class="bi ' + (document.fullscreenElement ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen') + '"></i>';
+});
+$('#btnFs').onclick = toggleFs;
+$('#btnMenu').onclick = () => $('#menu').classList.toggle('hidden');
+const edEl = $('#editor');
+const edOff = bootstrap.Offcanvas.getOrCreateInstance(edEl);
+function openEditor(){ renderList(); renderForm(); edOff.show(); }
+$('#btnEdit').onclick = () => edEl.classList.contains('show') ? edOff.hide() : openEditor();
+
+document.addEventListener('keydown', e => {
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if(k === 'arrowright' || k === 'pagedown') step(1);
+  else if(k === 'arrowleft' || k === 'pageup') step(-1);
+  else if(k === 'f') toggleFs();
+  else if(k === 'm') $('#menu').classList.toggle('hidden');
+  else if(k === 'e') $('#btnEdit').click();
+});
+
+/* ===================== TRÌNH BIÊN TẬP ===================== */
+function renderList(){
+  const ul = $('#list');
+  ul.innerHTML = '';
+  if(!data.items.length){
+    ul.innerHTML = '<li class="list-group-item text-secondary">Chưa có mục nào. Bấm "Thêm mục".</li>';
+    return;
+  }
+  data.items.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex align-items-center gap-2 py-2' + (it.id === selId ? ' sel' : '');
+    const ic = document.createElement('i'); ic.className = 'bi ' + TYPES[it.type].icon + ' text-secondary';
+    const tt = document.createElement('span'); tt.className = 'flex-grow-1 text-truncate'; tt.textContent = (i+1) + '. ' + it.title;
+    const grp = document.createElement('div'); grp.className = 'btn-group btn-group-sm';
+    const mk = (cls, icon, fn, dis) => {
+      const b = document.createElement('button');
+      b.className = 'btn btn-outline-secondary ' + cls; b.innerHTML = '<i class="bi ' + icon + '"></i>';
+      b.disabled = !!dis;
+      b.onclick = e => { e.stopPropagation(); fn(); };
+      return b;
+    };
+    grp.append(
+      mk('', 'bi-arrow-up',   () => move(i,-1), i === 0),
+      mk('', 'bi-arrow-down', () => move(i, 1), i === data.items.length-1),
+      mk('btn-outline-danger', 'bi-trash', () => remove(it.id))
+    );
+    li.append(ic, tt, grp);
+    li.onclick = () => { selId = it.id; renderList(); renderForm(); show(it.id); };
+    ul.append(li);
+  });
+}
+function move(i, d){
+  const j = i + d;
+  if(j < 0 || j >= data.items.length) return;
+  [data.items[i], data.items[j]] = [data.items[j], data.items[i]];
+  save(); renderList(); renderMenu(); scrollMenuTo(currentId);
+  if(currentId) $('#badge').textContent = (idx(currentId)+1) + '/' + data.items.length + ' · ' + data.items[idx(currentId)].title;
+}
+function remove(id){
+  const it = data.items[idx(id)];
+  if(!confirm('Xóa mục "' + it.title + '"?')) return;
+  const i = idx(id);
+  data.items.splice(i, 1);
+  save();
+  if(selId === id) selId = null;
+  if(currentId === id){
+    const n = data.items[Math.min(i, data.items.length-1)];
+    show(n ? n.id : null);
+  } else renderMenu();
+  renderList(); renderForm();
+}
+$('#btnAdd').onclick = () => {
+  const it = {id:uid(), title:'Mục mới', type:'image', src:'', thumb:'', html:''};
+  data.items.push(it);
+  selId = it.id; save();
+  renderList(); renderForm(); show(it.id);
+};
+$('#presTitle').value = data.title;
+$('#presTitle').oninput = e => { data.title = e.target.value; document.title = data.title || 'Thuyết trình'; save(); };
+
+function renderForm(){
+  const form = $('#form');
+  const i = idx(selId);
+  if(i < 0){ form.innerHTML = '<div class="text-secondary small">Chọn một mục trong danh sách để biên tập.</div>'; return; }
+  const it = data.items[i];
+  form.innerHTML =
+   '<div class="mb-2"><label class="form-label small text-secondary">Tiêu đề</label><input id="f-title" class="form-control form-control-sm"></div>' +
+   '<div class="mb-2"><label class="form-label small text-secondary">Loại nội dung</label><select id="f-type" class="form-select form-select-sm">' +
+     Object.keys(TYPES).map(k => '<option value="'+k+'">'+TYPES[k].label+'</option>').join('') + '</select></div>' +
+   '<div id="f-media">' +
+     '<label class="form-label small text-secondary">Ảnh: dán URL hoặc tải tệp lên</label>' +
+     '<div class="input-group input-group-sm mb-1"><input id="f-src" class="form-control" placeholder="https://...">' +
+     '<label class="btn btn-outline-secondary mb-0" title="Tải ảnh từ máy"><i class="bi bi-upload"></i><input type="file" id="f-file" accept="image/*" hidden></label></div>' +
+     '<div id="f-hint" class="form-text mb-2"></div>' +
+     '<label class="form-label small text-secondary">Ảnh thu nhỏ trên menu (tùy chọn, mặc định dùng chính ảnh)</label>' +
+     '<input id="f-thumb" class="form-control form-control-sm mb-2" placeholder="https://...">' +
+   '</div>' +
+   '<div id="f-htmlwrap"><label class="form-label small text-secondary">Mã HTML (đã có sẵn Bootstrap 5 + Icons)</label>' +
+     '<textarea id="f-html" rows="12" class="form-control form-control-sm font-monospace" spellcheck="false"></textarea></div>' +
+   '<button class="btn btn-sm btn-primary mt-3" id="f-preview"><i class="bi bi-play-fill"></i> Xem thử</button>';
+
+  const fTitle = $('#f-title'), fType = $('#f-type'), fSrc = $('#f-src'), fThumb = $('#f-thumb'), fHtml = $('#f-html'), hint = $('#f-hint');
+  fTitle.value = it.title; fType.value = it.type; fThumb.value = it.thumb; fHtml.value = it.html;
+
+  function syncSrc(){
+    if(it.src.startsWith('data:')){
+      fSrc.value = '';
+      fSrc.placeholder = 'Đã nhúng tệp (~' + Math.round(it.src.length*0.75/1024) + ' KB). Nhập URL để thay thế.';
+      hint.textContent = 'Ảnh nhúng sẽ được lưu cả trong file JSON (file sẽ nặng).';
+    } else { fSrc.value = it.src; fSrc.placeholder = 'https://...'; hint.textContent = it.type === 'pano' ? 'Ảnh 360° dạng equirectangular (tỉ lệ 2:1). Ảnh từ URL cần máy chủ bật CORS.' : ''; }
+  }
+  function syncType(){
+    $('#f-media').style.display = it.type === 'html' ? 'none' : '';
+    $('#f-htmlwrap').style.display = it.type === 'html' ? '' : 'none';
+    syncSrc();
+  }
+  syncType();
+  const refresh = () => { if(currentId === it.id) show(it.id); };
+
+  fTitle.oninput = () => { it.title = fTitle.value; save(); renderMenu(); renderList(); const n = idx(currentId); if(n>=0 && currentId===it.id) $('#badge').textContent = (n+1)+'/'+data.items.length+' · '+it.title; };
+  fType.onchange = () => { it.type = fType.value; save(); syncType(); renderMenu(); renderList(); refresh(); };
+  fSrc.oninput = () => { if(fSrc.value.trim() !== '' || !it.src.startsWith('data:')) { it.src = fSrc.value.trim(); save(); } };
+  fSrc.onchange = () => { renderMenu(); refresh(); syncSrc(); };
+  fThumb.onchange = () => { it.thumb = fThumb.value.trim(); save(); renderMenu(); };
+  fHtml.oninput = () => { it.html = fHtml.value; save(); };
+  fHtml.onchange = refresh;
+  $('#f-preview').onclick = () => show(it.id);
+  $('#f-file').onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = () => { it.src = r.result; save(); syncSrc(); renderMenu(); refresh(); toast('Đã nhúng ảnh "' + f.name + '".'); };
+    r.readAsDataURL(f);
+  };
+}
+
+/* ---- Lưu / nạp JSON ---- */
+$('#btnSave').onclick = () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (data.title || 'thuyet-trinh').replace(/[\\/:*?"<>|]+/g,'_') + '.json';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('#fileJson').onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = normalize(JSON.parse(r.result));
+      if(!d) throw new Error('Sai cấu trúc');
+      data = d; selId = null; save();
+      $('#presTitle').value = data.title;
+      renderList(); renderForm();
+      show(data.items[0] ? data.items[0].id : null);
+      toast('Đã nạp ' + data.items.length + ' mục.');
+    }catch(err){ toast('File JSON không hợp lệ: ' + err.message); }
+    e.target.value = '';
+  };
+  r.readAsText(f);
+};
+$('#btnReset').onclick = () => {
+  if(!confirm('Xóa toàn bộ nội dung hiện tại và quay về dữ liệu mẫu?')) return;
+  data = JSON.parse(JSON.stringify(DEFAULT));
+  data.items.forEach(i => i.id = uid());
+  selId = null; save();
+  $('#presTitle').value = data.title;
+  renderList(); renderForm(); show(data.items[0].id);
+};
+
+/* ===================== KHỞI ĐỘNG ===================== */
+document.title = data.title || 'Thuyết trình';
+renderMenu();
+show(data.items[0] ? data.items[0].id : null);
+})();
+</script>
+</body>
+</html>
