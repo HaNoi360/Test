@@ -5,7 +5,8 @@
      v1.4 khung 10:16 (dọc, 800x1280 CSS px) làm mặc định, tự đổi 16:10 nếu xoay ngang
      v1.5 luôn dọc 10:16 dù mở trên PC hay xoay ngang; bỏ nút bật/tắt khung
      v1.6 khối HTML mẫu thành form gửi về Google Sheet qua Apps Script
-     v1.7 form khớp 18 cột Sheet (Dự án, Họ tên, Điện thoại, Zalo, Khảo sát...), tự điền Giờ đăng ký, Trang gửi, Thiết bị, Phiên bản App -->
+     v1.7 form theo 18 cột Sheet
+     v1.8 form gửi JSON + token đúng chuẩn Apps Script cũ (phones, zalos, khaoSat*...), dùng được script cũ không cần sửa -->
 <html lang="vi" data-bs-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -130,7 +131,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const STORE = 'presentation-tool-data-v1';
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 const TYPES = {
   pano:  {label:'Ảnh 360°', icon:'bi-globe2'},
   image: {label:'Ảnh 2D',   icon:'bi-image'},
@@ -142,10 +143,10 @@ const BOOTSTRAP_JS = 'https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now() + Math.random().toString(16).slice(2));
 
-const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
+const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:620px">
   <div class="text-center mb-4">
     <i class="bi bi-envelope-paper display-4 text-primary"></i>
-    <h1 class="h2 mt-2 mb-1">Đăng ký nhận thông tin</h1>
+    <h1 class="h2 mt-2 mb-1">Đăng ký nhận tư vấn</h1>
     <p class="text-secondary mb-0">Điền thông tin bên dưới, chúng tôi sẽ liên hệ lại sớm nhất.</p>
   </div>
 
@@ -154,34 +155,34 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
 
     <div class="form-floating mb-3">
       <input type="text" class="form-control form-control-lg" id="ho_ten" name="ho_ten"
-             placeholder="Họ tên" maxlength="100" autocomplete="name" required>
+             placeholder="Họ tên" maxlength="120" autocomplete="name" required>
       <label for="ho_ten">Họ tên *</label>
       <div class="invalid-feedback">Vui lòng nhập họ tên.</div>
     </div>
 
-    <div class="form-floating mb-3">
-      <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai" name="dien_thoai"
-             placeholder="Điện thoại" maxlength="20" autocomplete="tel" required>
-      <label for="dien_thoai">Điện thoại *</label>
-      <div class="invalid-feedback">Số điện thoại cần có từ 8 đến 15 chữ số.</div>
+    <div class="mb-3">
+      <div class="form-floating">
+        <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai" name="dien_thoai"
+               placeholder="Điện thoại" maxlength="20" autocomplete="tel" required>
+        <label for="dien_thoai">Điện thoại *</label>
+        <div class="invalid-feedback">Số điện thoại gồm 10–11 chữ số, bắt đầu bằng 0 (hoặc +84).</div>
+      </div>
+      <div class="form-check form-switch mt-2 ms-1">
+        <input class="form-check-input" type="checkbox" role="switch" id="zalo_1">
+        <label class="form-check-label" for="zalo_1">Số này có Zalo</label>
+      </div>
     </div>
 
-    <div class="row g-3 mb-3">
-      <div class="col-sm-6">
-        <div class="form-floating">
-          <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai_khac" name="dien_thoai_khac"
-                 placeholder="Điện thoại khác" maxlength="20">
-          <label for="dien_thoai_khac">Điện thoại khác</label>
-          <div class="invalid-feedback">Cần có từ 8 đến 15 chữ số.</div>
-        </div>
+    <div class="mb-3">
+      <div class="form-floating">
+        <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai_khac" name="dien_thoai_khac"
+               placeholder="Điện thoại khác" maxlength="20">
+        <label for="dien_thoai_khac">Điện thoại khác</label>
+        <div class="invalid-feedback">Số điện thoại gồm 10–11 chữ số, bắt đầu bằng 0 (hoặc +84).</div>
       </div>
-      <div class="col-sm-6">
-        <div class="form-floating">
-          <input type="tel" inputmode="tel" class="form-control form-control-lg" id="zalo" name="zalo"
-                 placeholder="Zalo" maxlength="20">
-          <label for="zalo">Zalo</label>
-          <div class="invalid-feedback">Cần có từ 8 đến 15 chữ số.</div>
-        </div>
+      <div class="form-check form-switch mt-2 ms-1">
+        <input class="form-check-input" type="checkbox" role="switch" id="zalo_2">
+        <label class="form-check-label" for="zalo_2">Số này có Zalo</label>
       </div>
     </div>
 
@@ -195,13 +196,7 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
     <h2 class="h6 text-uppercase text-secondary mb-3">Nhu cầu</h2>
 
     <div class="form-floating mb-3">
-      <select class="form-select form-select-lg" id="quan_tam" name="quan_tam">
-        <option value="">-- Chọn --</option>
-        <option>Tìm hiểu thông tin</option>
-        <option>Nhận báo giá</option>
-        <option>Đặt lịch xem thực tế</option>
-        <option>Nhận tư vấn</option>
-      </select>
+      <select class="form-select form-select-lg" id="quan_tam" name="quan_tam"></select>
       <label for="quan_tam">Quan tâm</label>
     </div>
 
@@ -213,37 +208,17 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
 
     <h2 class="h6 text-uppercase text-secondary mb-3">Khảo sát nhanh <span class="fw-normal text-lowercase">(không bắt buộc)</span></h2>
 
-    <div class="form-floating mb-3">
-      <select class="form-select form-select-lg" id="khao_sat_nguon" name="khao_sat_nguon">
-        <option value="">-- Chọn --</option>
-        <option>Facebook</option>
-        <option>Zalo</option>
-        <option>Google / Website</option>
-        <option>Bạn bè, người thân giới thiệu</option>
-        <option>Quảng cáo</option>
-        <option>Sự kiện</option>
-        <option>Khác</option>
-      </select>
-      <label for="khao_sat_nguon">Nguồn biết đến</label>
+    <div class="mb-3">
+      <div class="mb-2">Bạn biết dự án qua kênh nào? <span class="text-secondary small">(chọn nhiều)</span></div>
+      <div id="c_nguon"></div>
     </div>
-
-    <div class="form-floating mb-3">
-      <input type="text" class="form-control form-control-lg" id="khao_sat_an_tuong" name="khao_sat_an_tuong"
-             placeholder="Ấn tượng" maxlength="300">
-      <label for="khao_sat_an_tuong">Điều bạn ấn tượng nhất</label>
+    <div class="mb-3">
+      <div class="mb-2">Điều gì ấn tượng nhất với bạn? <span class="text-secondary small">(chọn nhiều)</span></div>
+      <div id="c_an_tuong"></div>
     </div>
-
-    <div class="form-floating mb-4">
-      <select class="form-select form-select-lg" id="khao_sat_uu_tien" name="khao_sat_uu_tien">
-        <option value="">-- Chọn --</option>
-        <option>Vị trí</option>
-        <option>Giá</option>
-        <option>Tiện ích</option>
-        <option>Thiết kế</option>
-        <option>Pháp lý</option>
-        <option>Khác</option>
-      </select>
-      <label for="khao_sat_uu_tien">Điều bạn ưu tiên nhất</label>
+    <div class="mb-4">
+      <div class="mb-2">Bạn ưu tiên điều gì? <span class="text-secondary small">(chọn tối đa 3, theo thứ tự quan trọng)</span></div>
+      <div id="c_uu_tien"></div>
     </div>
 
     <!-- Ô chống spam: người thật không thấy, bot hay điền vào -->
@@ -259,39 +234,101 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
 
 <script>
 (function(){
-  // >>> Dán URL Web App của Google Apps Script vào dòng dưới <<<
-  var ENDPOINT = 'https://script.google.com/macros/s/AKfycbyYKqv5Lgd2CJOpaRC4HruB-LMsHr5-4U1uHHBPHETVbioXbKItnU83n-ackF-EsfF57w/exec';
-  // Cột "Dự án" của Sheet. Để trống = lấy tên bài thuyết trình
-  var DU_AN = '';
+  // >>> CẤU HÌNH <<<
+  var ENDPOINT = 'https://script.google.com/macros/s/AKfycbyYKqv5Lgd2CJOpaRC4HruB-LMsHr5-4U1uHHBPHETVbioXbKItnU83n-ackF-EsfF57w/exec';   // URL /exec của Apps Script
+  var TOKEN = 'emdoithanhchuoinaycoduockhonga';   // phải trùng CONFIG.TOKEN trong Apps Script
+  var DU_AN = '';                                  // cột "Dự án". Để trống = lấy tên bài thuyết trình
+  // Các lựa chọn hiển thị (nội dung không dùng dấu chấm phẩy ;)
+  var OPT_QUAN_TAM = ['1 phòng ngủ', '2 phòng ngủ', '3 phòng ngủ', '4 phòng ngủ', 'Khác'];
+  var OPT_NGUON    = ['Facebook', 'Zalo', 'Google / Website', 'Bạn bè giới thiệu', 'Quảng cáo', 'Sự kiện', 'Khác'];
+  var OPT_AN_TUONG = ['Vị trí', 'Tiện ích nội khu', 'Thiết kế', 'Giá bán', 'Pháp lý', 'Chủ đầu tư'];
+  var OPT_UU_TIEN  = ['Giá bán', 'Pháp lý', 'Vị trí', 'Tiện ích', 'Thiết kế', 'Tiến độ bàn giao'];
 
   var PRES = window.PRES || {};
   var form = document.getElementById('f');
   var msg = document.getElementById('msg');
   var btn = form.querySelector('button[type=submit]');
   var btnHtml = btn.innerHTML;
-  var PHONES = ['dien_thoai', 'dien_thoai_khac', 'zalo'];
-  var FIELDS = ['ho_ten', 'dien_thoai', 'dien_thoai_khac', 'zalo', 'email', 'quan_tam', 'ghi_chu',
-                'khao_sat_nguon', 'khao_sat_an_tuong', 'khao_sat_uu_tien'];
-
   function el(k){ return form.elements[k]; }
-  function pad(n){ return (n < 10 ? '0' : '') + n; }
-  function nowText(){
-    var d = new Date();
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
-           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
-  }
-  function show(type, text){
-    msg.innerHTML = '<div class="alert alert-' + type + ' mb-0"></div>';
-    msg.firstChild.textContent = text;
-  }
-  PHONES.forEach(function(k){ el(k).addEventListener('input', function(){ el(k).setCustomValidity(''); }); });
 
-  function checkPhones(){
-    PHONES.forEach(function(k){
-      var v = el(k).value.trim(), n = v.replace(/\\D/g, '').length;
-      var ok = v === '' ? !el(k).required : (n >= 8 && n <= 15);
-      el(k).setCustomValidity(ok ? '' : 'invalid');
+  // Ô chọn Quan tâm
+  var sq = el('quan_tam');
+  sq.innerHTML = '<option value="">-- Chọn --</option>';
+  OPT_QUAN_TAM.forEach(function(o){ var op = document.createElement('option'); op.textContent = o; sq.appendChild(op); });
+
+  // Nút chọn dạng viên thuốc: chọn nhiều, hoặc xếp hạng (ranked) tối đa 3
+  function makeChips(box, options, ranked){
+    var sel = [];
+    var btns = options.map(function(o){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-outline-primary rounded-pill me-2 mb-2';
+      b.addEventListener('click', function(){
+        var i = sel.indexOf(o);
+        if(i >= 0) sel.splice(i, 1);
+        else { if(ranked && sel.length >= 3) return; sel.push(o); }
+        paint();
+      });
+      box.appendChild(b);
+      return b;
     });
+    function paint(){
+      btns.forEach(function(b, k){
+        var i = sel.indexOf(options[k]);
+        b.classList.toggle('active', i >= 0);
+        b.setAttribute('aria-pressed', i >= 0 ? 'true' : 'false');
+        b.textContent = options[k];
+        if(ranked && i >= 0){
+          var s = document.createElement('span');
+          s.className = 'badge text-bg-light ms-2';
+          s.textContent = i + 1;
+          b.appendChild(s);
+        }
+      });
+    }
+    paint();
+    return {
+      value: function(){ return sel.map(function(o, i){ return ranked ? (i + 1) + ') ' + o : o; }).join('; '); },
+      reset: function(){ sel = []; paint(); }
+    };
+  }
+  var cNguon = makeChips(document.getElementById('c_nguon'), OPT_NGUON, false);
+  var cAnTuong = makeChips(document.getElementById('c_an_tuong'), OPT_AN_TUONG, false);
+  var cUuTien = makeChips(document.getElementById('c_uu_tien'), OPT_UU_TIEN, true);
+
+  // Chuẩn hóa số điện thoại giống Apps Script: 0xxxxxxxxx (10-11 số), +84 / 84 đổi thành 0
+  function normPhone(v){
+    var s = String(v || '').replace(/[\\s.\\-()]/g, '').replace(/^\\+?84/, '0');
+    return /^0\\d{9,10}$/.test(s) ? s : '';
+  }
+  function checkPhones(){
+    var a = el('dien_thoai'), b = el('dien_thoai_khac');
+    a.setCustomValidity(normPhone(a.value) ? '' : 'invalid');
+    b.setCustomValidity(b.value.trim() === '' || normPhone(b.value) ? '' : 'invalid');
+  }
+  ['dien_thoai', 'dien_thoai_khac'].forEach(function(k){ el(k).addEventListener('input', function(){ el(k).setCustomValidity(''); }); });
+
+  function show(type, text, small){
+    msg.innerHTML = '<div class="alert alert-' + type + ' mb-0"><div class="m1"></div><div class="small mt-1 opacity-75 m2"></div></div>';
+    msg.querySelector('.m1').textContent = text;
+    msg.querySelector('.m2').textContent = small || '';
+  }
+  function newId(){
+    if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  // Gửi JSON dạng text/plain (không bị preflight). Thử đọc được phản hồi; nếu trình duyệt chặn thì gửi lại
+  // kiểu no-cors (cùng id nên Apps Script tự loại bản trùng)
+  function send(json){
+    var h = {'Content-Type': 'text/plain;charset=utf-8'};
+    return fetch(ENDPOINT, {method: 'POST', headers: h, body: json})
+      .then(function(r){ return r.json(); })
+      .then(function(j){ return {verified: true, j: j}; })
+      .catch(function(){
+        return fetch(ENDPOINT, {method: 'POST', mode: 'no-cors', headers: h, body: json})
+          .then(function(){ return {verified: false}; });
+      });
   }
 
   form.addEventListener('submit', function(ev){
@@ -307,24 +344,47 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
       return;
     }
 
-    var body = new URLSearchParams();
-    FIELDS.forEach(function(k){ body.append(k, el(k).value.trim()); });
-    // Các cột tự động
-    body.append('du_an', DU_AN || PRES.presentation || '');
-    body.append('gio_dang_ky', nowText());
-    body.append('trang_gui', PRES.presentation ? PRES.presentation + ' > ' + (PRES.item || '') : 'form');
-    body.append('thiet_bi', (navigator.userAgent + ' | ' + screen.width + 'x' + screen.height + ' @' + (window.devicePixelRatio || 1)).slice(0, 300));
-    body.append('phien_ban_app', PRES.version ? 'v' + PRES.version : '');
+    var p1 = normPhone(el('dien_thoai').value), p2 = normPhone(el('dien_thoai_khac').value);
+    var phones = [p1], zalos = [];
+    if(p2) phones.push(p2);
+    if(document.getElementById('zalo_1').checked) zalos.push(p1);
+    if(p2 && document.getElementById('zalo_2').checked) zalos.push(p2);
+
+    var payload = {
+      token: TOKEN,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+      project: DU_AN || PRES.presentation || '',
+      name: el('ho_ten').value.trim(),
+      phones: phones,
+      zalos: zalos,
+      email: el('email').value.trim(),
+      interest: el('quan_tam').value,
+      note: el('ghi_chu').value.trim(),
+      khaoSatNguon: cNguon.value(),
+      khaoSatAnTuong: cAnTuong.value(),
+      khaoSatUuTien: cUuTien.value(),
+      source: PRES.presentation ? PRES.presentation + ' > ' + (PRES.item || '') : 'form',
+      ua: (screen.width + 'x' + screen.height + ' | ' + navigator.userAgent).slice(0, 150),
+      appVersion: PRES.version ? 'v' + PRES.version : ''
+    };
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Đang gửi...';
 
-    // Apps Script không hỗ trợ CORS: dùng no-cors, gửi được nhưng không đọc được phản hồi
-    fetch(ENDPOINT, {method: 'POST', mode: 'no-cors', body: body})
-      .then(function(){
-        show('success', 'Đã gửi thành công. Cảm ơn bạn!');
+    send(JSON.stringify(payload))
+      .then(function(res){
+        var j = res.j || {};
+        if(res.verified && !(j.ok && !j.skipped)){
+          if(j.error === 'sai token') show('danger', 'Gửi không thành công: sai TOKEN (TOKEN trong form khác CONFIG.TOKEN của Apps Script).');
+          else if(j.skipped) show('danger', 'Thông tin chưa hợp lệ (thiếu họ tên hoặc số điện thoại). Vui lòng kiểm tra lại.');
+          else show('danger', 'Gửi không thành công' + (j.error ? ': ' + j.error : '. Vui lòng thử lại.'));
+          return;
+        }
+        show('success', 'Đã gửi thành công. Cảm ơn bạn!', res.verified ? '' : '(Chưa xác nhận được phản hồi từ máy chủ)');
         form.reset();
         form.classList.remove('was-validated');
+        cNguon.reset(); cAnTuong.reset(); cUuTien.reset();
       })
       .catch(function(){
         show('danger', 'Gửi không thành công. Vui lòng kiểm tra kết nối mạng và thử lại.');
@@ -334,17 +394,21 @@ const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
 })();
 <\/script>`;
 const SAMPLE_OLD_MARK = 'Đây là một khối HTML dùng Bootstrap 5.';
-// Dữ liệu đã lưu từ bản cũ: nếu mục mẫu (v1.0 hoặc form v1.6) còn nguyên thì thay bằng form mới
+// Dữ liệu đã lưu từ bản cũ: nếu mục mẫu (v1.0 hoặc form v1.6/v1.7) còn nguyên thì thay bằng form mới
 function upgradeSample(d){
-  const PLACEHOLDER = 'https://script.google.com/macros/s/AKfycbyYKqv5Lgd2CJOpaRC4HruB-LMsHr5-4U1uHHBPHETVbioXbKItnU83n-ackF-EsfF57w/exec';
   d.items.forEach(it => {
     if(it.type !== 'html') return;
     const isV10 = it.title === 'Khối HTML (mẫu)' && it.html.indexOf(SAMPLE_OLD_MARK) >= 0;
-    const isV16 = it.title === 'Form liên hệ (mẫu)' && it.html.indexOf('name="so_dien_thoai"') >= 0 && it.html.indexOf('hp_check') >= 0;
-    if(!isV10 && !isV16) return;
-    const m = it.html.match(/var ENDPOINT = '([^']*)'/);          // giữ URL Apps Script đã dán
+    // form v1.6/v1.7 (có ô chống spam hp_check nhưng chưa có khaoSatNguon)
+    const isOldForm = it.title === 'Form liên hệ (mẫu)' && it.html.indexOf('hp_check') >= 0 && it.html.indexOf('khaoSatNguon') < 0;
+    if(!isV10 && !isOldForm) return;
+    const url = it.html.match(/var ENDPOINT = '([^']*)'/);   // giữ URL Apps Script và tên dự án đã nhập
+    const da  = it.html.match(/var DU_AN = '([^']*)'/);
+    let h = SAMPLE_FORM_HTML;
+    if(url && url[1] && url[1].indexOf('XXXXXX') < 0) h = h.replace("var ENDPOINT = 'https://script.google.com/macros/s/AKfycbyYKqv5Lgd2CJOpaRC4HruB-LMsHr5-4U1uHHBPHETVbioXbKItnU83n-ackF-EsfF57w/exec'", "var ENDPOINT = '" + url[1] + "'");
+    if(da && da[1]) h = h.replace("var DU_AN = ''", "var DU_AN = '" + da[1] + "'");
     it.title = 'Form liên hệ (mẫu)';
-    it.html = (m && m[1] && m[1].indexOf('XXXXXX') < 0) ? SAMPLE_FORM_HTML.replace(PLACEHOLDER, m[1]) : SAMPLE_FORM_HTML;
+    it.html = h;
   });
   return d;
 }
