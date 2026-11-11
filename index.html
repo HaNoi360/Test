@@ -3,7 +3,9 @@
      v1.0 bản đầu · v1.1 menu căn giữa · v1.2 vuốt/kéo carousel
      v1.3 khung 16:10 (ngang) vừa Tab S7, nút bấm to hơn cho cảm ứng
      v1.4 khung 10:16 (dọc, 800x1280 CSS px) làm mặc định, tự đổi 16:10 nếu xoay ngang
-     v1.5 luôn dọc 10:16 dù mở trên PC hay xoay ngang; bỏ nút bật/tắt khung -->
+     v1.5 luôn dọc 10:16 dù mở trên PC hay xoay ngang; bỏ nút bật/tắt khung
+     v1.6 khối HTML mẫu thành form gửi về Google Sheet qua Apps Script
+     v1.7 form khớp 18 cột Sheet (Dự án, Họ tên, Điện thoại, Zalo, Khảo sát...), tự điền Giờ đăng ký, Trang gửi, Thiết bị, Phiên bản App -->
 <html lang="vi" data-bs-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -128,6 +130,7 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const STORE = 'presentation-tool-data-v1';
+const APP_VERSION = '1.7';
 const TYPES = {
   pano:  {label:'Ảnh 360°', icon:'bi-globe2'},
   image: {label:'Ảnh 2D',   icon:'bi-image'},
@@ -139,6 +142,213 @@ const BOOTSTRAP_JS = 'https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now() + Math.random().toString(16).slice(2));
 
+const SAMPLE_FORM_HTML = `<div class="mx-auto" style="max-width:600px">
+  <div class="text-center mb-4">
+    <i class="bi bi-envelope-paper display-4 text-primary"></i>
+    <h1 class="h2 mt-2 mb-1">Đăng ký nhận thông tin</h1>
+    <p class="text-secondary mb-0">Điền thông tin bên dưới, chúng tôi sẽ liên hệ lại sớm nhất.</p>
+  </div>
+
+  <form id="f" novalidate>
+    <h2 class="h6 text-uppercase text-secondary mb-3">Thông tin liên hệ</h2>
+
+    <div class="form-floating mb-3">
+      <input type="text" class="form-control form-control-lg" id="ho_ten" name="ho_ten"
+             placeholder="Họ tên" maxlength="100" autocomplete="name" required>
+      <label for="ho_ten">Họ tên *</label>
+      <div class="invalid-feedback">Vui lòng nhập họ tên.</div>
+    </div>
+
+    <div class="form-floating mb-3">
+      <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai" name="dien_thoai"
+             placeholder="Điện thoại" maxlength="20" autocomplete="tel" required>
+      <label for="dien_thoai">Điện thoại *</label>
+      <div class="invalid-feedback">Số điện thoại cần có từ 8 đến 15 chữ số.</div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-sm-6">
+        <div class="form-floating">
+          <input type="tel" inputmode="tel" class="form-control form-control-lg" id="dien_thoai_khac" name="dien_thoai_khac"
+                 placeholder="Điện thoại khác" maxlength="20">
+          <label for="dien_thoai_khac">Điện thoại khác</label>
+          <div class="invalid-feedback">Cần có từ 8 đến 15 chữ số.</div>
+        </div>
+      </div>
+      <div class="col-sm-6">
+        <div class="form-floating">
+          <input type="tel" inputmode="tel" class="form-control form-control-lg" id="zalo" name="zalo"
+                 placeholder="Zalo" maxlength="20">
+          <label for="zalo">Zalo</label>
+          <div class="invalid-feedback">Cần có từ 8 đến 15 chữ số.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-floating mb-4">
+      <input type="email" class="form-control form-control-lg" id="email" name="email"
+             placeholder="Email" maxlength="120" autocomplete="email">
+      <label for="email">Email</label>
+      <div class="invalid-feedback">Email chưa đúng định dạng.</div>
+    </div>
+
+    <h2 class="h6 text-uppercase text-secondary mb-3">Nhu cầu</h2>
+
+    <div class="form-floating mb-3">
+      <select class="form-select form-select-lg" id="quan_tam" name="quan_tam">
+        <option value="">-- Chọn --</option>
+        <option>Tìm hiểu thông tin</option>
+        <option>Nhận báo giá</option>
+        <option>Đặt lịch xem thực tế</option>
+        <option>Nhận tư vấn</option>
+      </select>
+      <label for="quan_tam">Quan tâm</label>
+    </div>
+
+    <div class="form-floating mb-4">
+      <textarea class="form-control form-control-lg" id="ghi_chu" name="ghi_chu"
+                placeholder="Ghi chú" maxlength="1000" style="height:130px"></textarea>
+      <label for="ghi_chu">Ghi chú</label>
+    </div>
+
+    <h2 class="h6 text-uppercase text-secondary mb-3">Khảo sát nhanh <span class="fw-normal text-lowercase">(không bắt buộc)</span></h2>
+
+    <div class="form-floating mb-3">
+      <select class="form-select form-select-lg" id="khao_sat_nguon" name="khao_sat_nguon">
+        <option value="">-- Chọn --</option>
+        <option>Facebook</option>
+        <option>Zalo</option>
+        <option>Google / Website</option>
+        <option>Bạn bè, người thân giới thiệu</option>
+        <option>Quảng cáo</option>
+        <option>Sự kiện</option>
+        <option>Khác</option>
+      </select>
+      <label for="khao_sat_nguon">Nguồn biết đến</label>
+    </div>
+
+    <div class="form-floating mb-3">
+      <input type="text" class="form-control form-control-lg" id="khao_sat_an_tuong" name="khao_sat_an_tuong"
+             placeholder="Ấn tượng" maxlength="300">
+      <label for="khao_sat_an_tuong">Điều bạn ấn tượng nhất</label>
+    </div>
+
+    <div class="form-floating mb-4">
+      <select class="form-select form-select-lg" id="khao_sat_uu_tien" name="khao_sat_uu_tien">
+        <option value="">-- Chọn --</option>
+        <option>Vị trí</option>
+        <option>Giá</option>
+        <option>Tiện ích</option>
+        <option>Thiết kế</option>
+        <option>Pháp lý</option>
+        <option>Khác</option>
+      </select>
+      <label for="khao_sat_uu_tien">Điều bạn ưu tiên nhất</label>
+    </div>
+
+    <!-- Ô chống spam: người thật không thấy, bot hay điền vào -->
+    <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+      <input type="text" name="hp_check" tabindex="-1" autocomplete="off">
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100" type="submit"><i class="bi bi-send me-2"></i>Gửi thông tin</button>
+  </form>
+
+  <div id="msg" class="mt-3" aria-live="polite"></div>
+</div>
+
+<script>
+(function(){
+  // >>> Dán URL Web App của Google Apps Script vào dòng dưới <<<
+  var ENDPOINT = 'https://script.google.com/macros/s/XXXXXXXXXXXXX/exec';
+  // Cột "Dự án" của Sheet. Để trống = lấy tên bài thuyết trình
+  var DU_AN = '';
+
+  var PRES = window.PRES || {};
+  var form = document.getElementById('f');
+  var msg = document.getElementById('msg');
+  var btn = form.querySelector('button[type=submit]');
+  var btnHtml = btn.innerHTML;
+  var PHONES = ['dien_thoai', 'dien_thoai_khac', 'zalo'];
+  var FIELDS = ['ho_ten', 'dien_thoai', 'dien_thoai_khac', 'zalo', 'email', 'quan_tam', 'ghi_chu',
+                'khao_sat_nguon', 'khao_sat_an_tuong', 'khao_sat_uu_tien'];
+
+  function el(k){ return form.elements[k]; }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function nowText(){
+    var d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  function show(type, text){
+    msg.innerHTML = '<div class="alert alert-' + type + ' mb-0"></div>';
+    msg.firstChild.textContent = text;
+  }
+  PHONES.forEach(function(k){ el(k).addEventListener('input', function(){ el(k).setCustomValidity(''); }); });
+
+  function checkPhones(){
+    PHONES.forEach(function(k){
+      var v = el(k).value.trim(), n = v.replace(/\\D/g, '').length;
+      var ok = v === '' ? !el(k).required : (n >= 8 && n <= 15);
+      el(k).setCustomValidity(ok ? '' : 'invalid');
+    });
+  }
+
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    msg.innerHTML = '';
+    checkPhones();
+    form.classList.add('was-validated');
+    if(!form.checkValidity()) return;
+
+    if(el('hp_check').value){ show('success', 'Cảm ơn bạn!'); return; }   // bot
+    if(/X{6,}/.test(ENDPOINT)){
+      show('warning', 'Chưa cấu hình URL Google Apps Script. Hãy thay chữ XXXXXXXXXXXXX trong mã HTML của mục này.');
+      return;
+    }
+
+    var body = new URLSearchParams();
+    FIELDS.forEach(function(k){ body.append(k, el(k).value.trim()); });
+    // Các cột tự động
+    body.append('du_an', DU_AN || PRES.presentation || '');
+    body.append('gio_dang_ky', nowText());
+    body.append('trang_gui', PRES.presentation ? PRES.presentation + ' > ' + (PRES.item || '') : 'form');
+    body.append('thiet_bi', (navigator.userAgent + ' | ' + screen.width + 'x' + screen.height + ' @' + (window.devicePixelRatio || 1)).slice(0, 300));
+    body.append('phien_ban_app', PRES.version ? 'v' + PRES.version : '');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Đang gửi...';
+
+    // Apps Script không hỗ trợ CORS: dùng no-cors, gửi được nhưng không đọc được phản hồi
+    fetch(ENDPOINT, {method: 'POST', mode: 'no-cors', body: body})
+      .then(function(){
+        show('success', 'Đã gửi thành công. Cảm ơn bạn!');
+        form.reset();
+        form.classList.remove('was-validated');
+      })
+      .catch(function(){
+        show('danger', 'Gửi không thành công. Vui lòng kiểm tra kết nối mạng và thử lại.');
+      })
+      .then(function(){ btn.disabled = false; btn.innerHTML = btnHtml; });
+  });
+})();
+<\/script>`;
+const SAMPLE_OLD_MARK = 'Đây là một khối HTML dùng Bootstrap 5.';
+// Dữ liệu đã lưu từ bản cũ: nếu mục mẫu (v1.0 hoặc form v1.6) còn nguyên thì thay bằng form mới
+function upgradeSample(d){
+  const PLACEHOLDER = 'https://script.google.com/macros/s/AKfycbyYKqv5Lgd2CJOpaRC4HruB-LMsHr5-4U1uHHBPHETVbioXbKItnU83n-ackF-EsfF57w/exec';
+  d.items.forEach(it => {
+    if(it.type !== 'html') return;
+    const isV10 = it.title === 'Khối HTML (mẫu)' && it.html.indexOf(SAMPLE_OLD_MARK) >= 0;
+    const isV16 = it.title === 'Form liên hệ (mẫu)' && it.html.indexOf('name="so_dien_thoai"') >= 0 && it.html.indexOf('hp_check') >= 0;
+    if(!isV10 && !isV16) return;
+    const m = it.html.match(/var ENDPOINT = '([^']*)'/);          // giữ URL Apps Script đã dán
+    it.title = 'Form liên hệ (mẫu)';
+    it.html = (m && m[1] && m[1].indexOf('XXXXXX') < 0) ? SAMPLE_FORM_HTML.replace(PLACEHOLDER, m[1]) : SAMPLE_FORM_HTML;
+  });
+  return d;
+}
+
 const DEFAULT = {
   version: 1,
   title: 'Bài thuyết trình mẫu',
@@ -149,8 +359,8 @@ const DEFAULT = {
      src:'https://picsum.photos/id/1018/2400/1500', thumb:'', html:''},
     {id:uid(), title:'Ảnh 2D - Biển', type:'image',
      src:'https://picsum.photos/id/1015/2400/1500', thumb:'', html:''},
-    {id:uid(), title:'Khối HTML (mẫu)', type:'html', src:'', thumb:'',
-     html:'<div class="container text-center py-5">\n  <h1 class="display-4">Xin chào!</h1>\n  <p class="lead">Đây là một khối HTML dùng Bootstrap 5.</p>\n  <div class="row g-3 mt-4">\n    <div class="col-md-4"><div class="card p-4"><h3>120</h3><p class="mb-0">Khách hàng</p></div></div>\n    <div class="col-md-4"><div class="card p-4"><h3>35</h3><p class="mb-0">Dự án</p></div></div>\n    <div class="col-md-4"><div class="card p-4"><h3>8</h3><p class="mb-0">Năm kinh nghiệm</p></div></div>\n  </div>\n</div>'}
+    {id:uid(), title:'Form liên hệ (mẫu)', type:'html', src:'', thumb:'',
+     html:SAMPLE_FORM_HTML}
   ]
 };
 
@@ -163,7 +373,7 @@ let imgCtl = null;
 function loadStore(){
   try{
     const raw = localStorage.getItem(STORE);
-    if(raw){ const d = normalize(JSON.parse(raw)); if(d) return d; }
+    if(raw){ const d = normalize(JSON.parse(raw)); if(d) return upgradeSample(d); }
   }catch(e){}
   return JSON.parse(JSON.stringify(DEFAULT));
 }
@@ -398,11 +608,14 @@ window.addEventListener('resize', () => imgCtl && imgCtl.resize());
 /* ---- Khối HTML (iframe sandbox) ---- */
 function mountHtml(view, it){
   const f = document.createElement('iframe');
+  // Thông tin cho khối HTML (form dùng để điền cột Dự án, Trang gửi, Phiên bản App)
+  const presJson = JSON.stringify({presentation:data.title, item:it.title, version:APP_VERSION}).replace(/</g,'\\u003c');
   f.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms');
   const body = it.html || '<div class="container py-5 text-secondary">Khối HTML trống.</div>';
   f.srcdoc = /<html[\s>]/i.test(body) ? body :
     '<!doctype html><html lang="vi" data-bs-theme="dark"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<script>window.PRES=' + presJson + ';<\/script>' +
     '<link rel="stylesheet" href="' + BOOTSTRAP_CSS + '">' +
     '<link rel="stylesheet" href="' + BOOTSTRAP_ICONS + '">' +
     '<style>body{padding:2rem 2rem 9rem;min-height:100vh}</style></head><body>' + body +
